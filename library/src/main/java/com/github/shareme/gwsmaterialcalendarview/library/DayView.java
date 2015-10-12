@@ -1,20 +1,3 @@
-/*
- * Copyright 2015 Prolific Interactive
- * Modifications Copyright (C) 2015 Fred Grott(GrottWorkShop)
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *   http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- *
- */
 package com.github.shareme.gwsmaterialcalendarview.library;
 
 import android.annotation.SuppressLint;
@@ -39,14 +22,17 @@ import android.view.Gravity;
 import android.view.View;
 import android.widget.CheckedTextView;
 
+import com.github.shareme.gwsmaterialcalendarview.library.MaterialCalendarView.ShowOtherDates;
 import com.github.shareme.gwsmaterialcalendarview.library.format.DayFormatter;
 
 import java.util.List;
 
+import static com.github.shareme.gwsmaterialcalendarview.library.MaterialCalendarView.showDecoratedDisabled;
+import static com.github.shareme.gwsmaterialcalendarview.library.MaterialCalendarView.showOtherMonths;
+import static com.github.shareme.gwsmaterialcalendarview.library.MaterialCalendarView.showOutOfRange;
 
 /**
  * Display one day of a {@linkplain MaterialCalendarView}
- * Created by fgrott on 9/16/2015.
  */
 @SuppressLint("ViewConstructor")
 class DayView extends CheckedTextView {
@@ -60,8 +46,9 @@ class DayView extends CheckedTextView {
     private DayFormatter formatter = DayFormatter.DEFAULT;
 
     private boolean isInRange = true;
-    private boolean showOtherDates = false;
+    private boolean isInMonth = true;
     private boolean isDecoratedDisabled = false;
+    private @ShowOtherDates int showOtherDates = MaterialCalendarView.SHOW_DEFAULTS;
 
     public DayView(Context context, CalendarDay day) {
         super(context);
@@ -145,13 +132,34 @@ class DayView extends CheckedTextView {
     }
 
     private void setEnabled() {
-        super.setEnabled(isInRange && !isDecoratedDisabled);
-        setVisibility(isInRange || showOtherDates ? View.VISIBLE : View.INVISIBLE);
+        boolean enabled = isInMonth && isInRange && !isDecoratedDisabled;
+        super.setEnabled(enabled);
+
+        boolean showOtherMonths = showOtherMonths(showOtherDates);
+        boolean showOutOfRange = showOutOfRange(showOtherDates) || showOtherMonths;
+        boolean showDecoratedDisabled = showDecoratedDisabled(showOtherDates);
+
+        boolean shouldBeVisible = enabled;
+
+        if(!isInMonth && showOtherMonths) {
+            shouldBeVisible = true;
+        }
+
+        if(!isInRange && showOutOfRange) {
+            shouldBeVisible |= isInMonth;
+        }
+
+        if(isDecoratedDisabled && showDecoratedDisabled) {
+            shouldBeVisible |= isInMonth && isInRange;
+        }
+
+        setVisibility(shouldBeVisible ? View.VISIBLE : View.INVISIBLE);
     }
 
-    protected void setupSelection(boolean showOtherDates, boolean inRange, boolean inMonth) {
+    protected void setupSelection(@ShowOtherDates int showOtherDates, boolean inRange, boolean inMonth) {
         this.showOtherDates = showOtherDates;
-        this.isInRange = inMonth && inRange;
+        this.isInMonth = inMonth;
+        this.isInRange = inRange;
         setEnabled();
     }
 
@@ -168,14 +176,11 @@ class DayView extends CheckedTextView {
         super.onDraw(canvas);
     }
 
-    @SuppressWarnings("deprecation")
     private void regenerateBackground() {
         if(selectionDrawable != null) {
-            //TODO: setBackgroundDrawable depreciated
             setBackgroundDrawable(selectionDrawable);
         }
         else {
-            //TODO: setBackgroundDrawable depreciated
             setBackgroundDrawable(generateBackground(selectionColor, fadeTime));
         }
     }

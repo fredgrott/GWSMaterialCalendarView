@@ -1,64 +1,49 @@
-/*
- * Copyright 2015 Prolific Interactive
- * Modifications Copyright (C) 2015 Fred Grott(GrottWorkShop)
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *   http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- *
- */
 package com.github.shareme.gwsmaterialcalendarview.library;
 
 import android.support.annotation.NonNull;
-import android.support.annotation.Nullable;
 import android.support.v4.view.PagerAdapter;
 import android.view.View;
 import android.view.ViewGroup;
 
+import com.github.shareme.gwsmaterialcalendarview.library.MaterialCalendarView.ShowOtherDates;
 import com.github.shareme.gwsmaterialcalendarview.library.format.DayFormatter;
 import com.github.shareme.gwsmaterialcalendarview.library.format.TitleFormatter;
 import com.github.shareme.gwsmaterialcalendarview.library.format.WeekDayFormatter;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Calendar;
-import java.util.LinkedList;
+import java.util.Collections;
 import java.util.List;
 
 /**
  * Pager adapter backing the calendar view
- * Created by fgrott on 9/16/2015.
  */
 class MonthPagerAdapter extends PagerAdapter {
 
-    private final LinkedList<MonthView> currentViews;
+    private final ArrayDeque<MonthView> currentViews;
 
-    private MonthView.Callbacks callbacks = null;
+    private final MaterialCalendarView mcv;
     private TitleFormatter titleFormatter = null;
     private Integer color = null;
     private Integer dateTextAppearance = null;
     private Integer weekDayTextAppearance = null;
-    private Boolean showOtherDates = null;
+    private @ShowOtherDates int showOtherDates = MaterialCalendarView.SHOW_DEFAULTS;
     private CalendarDay minDate = null;
     private CalendarDay maxDate = null;
     private DateRangeIndex rangeIndex;
-    private CalendarDay selectedDate = null;
+    private List<CalendarDay> selectedDates = new ArrayList<>();
     private WeekDayFormatter weekDayFormatter = WeekDayFormatter.DEFAULT;
     private DayFormatter dayFormatter = DayFormatter.DEFAULT;
     private List<DayViewDecorator> decorators = new ArrayList<>();
     private List<DecoratorResult> decoratorResults = null;
     private int firstDayOfTheWeek = Calendar.SUNDAY;
+    private boolean selectionEnabled = true;
 
-
-    MonthPagerAdapter() {
-        currentViews = new LinkedList<>();
+    MonthPagerAdapter(MaterialCalendarView mcv) {
+        this.mcv = mcv;
+        currentViews = new ArrayDeque<>();
+        currentViews.iterator();
         setRangeDates(null, null);
     }
 
@@ -125,12 +110,12 @@ class MonthPagerAdapter extends PagerAdapter {
     @Override
     public Object instantiateItem(ViewGroup container, int position) {
         CalendarDay month = getItem(position);
-        MonthView monthView = new MonthView(container.getContext(), month, firstDayOfTheWeek);
+        MonthView monthView = new MonthView(mcv, month, firstDayOfTheWeek);
         monthView.setAlpha(0);
+        monthView.setSelectionEnabled(selectionEnabled);
 
         monthView.setWeekDayFormatter(weekDayFormatter);
         monthView.setDayFormatter(dayFormatter);
-        monthView.setCallbacks(callbacks);
         if (color != null) {
             monthView.setSelectionColor(color);
         }
@@ -140,12 +125,10 @@ class MonthPagerAdapter extends PagerAdapter {
         if (weekDayTextAppearance != null) {
             monthView.setWeekDayTextAppearance(weekDayTextAppearance);
         }
-        if (showOtherDates != null) {
-            monthView.setShowOtherDates(showOtherDates);
-        }
+        monthView.setShowOtherDates(showOtherDates);
         monthView.setMinimumDate(minDate);
         monthView.setMaximumDate(maxDate);
-        monthView.setSelectedDate(selectedDate);
+        monthView.setSelectedDates(selectedDates);
 
         container.addView(monthView);
         currentViews.add(monthView);
@@ -159,6 +142,13 @@ class MonthPagerAdapter extends PagerAdapter {
         firstDayOfTheWeek = day;
         for (MonthView monthView : currentViews) {
             monthView.setFirstDayOfWeek(firstDayOfTheWeek);
+        }
+    }
+
+    public void setSelectionEnabled(boolean enabled) {
+        selectionEnabled = enabled;
+        for (MonthView monthView : currentViews) {
+            monthView.setSelectionEnabled(selectionEnabled);
         }
     }
 
@@ -178,13 +168,6 @@ class MonthPagerAdapter extends PagerAdapter {
         this.titleFormatter = titleFormatter;
     }
 
-    public void setCallbacks(MonthView.Callbacks callbacks) {
-        this.callbacks = callbacks;
-        for (MonthView monthView : currentViews) {
-            monthView.setCallbacks(callbacks);
-        }
-    }
-
     public void setSelectionColor(int color) {
         this.color = color;
         for (MonthView monthView : currentViews) {
@@ -202,10 +185,10 @@ class MonthPagerAdapter extends PagerAdapter {
         }
     }
 
-    public void setShowOtherDates(boolean show) {
-        this.showOtherDates = show;
+    public void setShowOtherDates(@ShowOtherDates int showFlags) {
+        this.showOtherDates = showFlags;
         for (MonthView monthView : currentViews) {
-            monthView.setShowOtherDates(show);
+            monthView.setShowOtherDates(showFlags);
         }
     }
 
@@ -223,7 +206,7 @@ class MonthPagerAdapter extends PagerAdapter {
         }
     }
 
-    public boolean getShowOtherDates() {
+    public @ShowOtherDates int getShowOtherDates() {
         return showOtherDates;
     }
 
@@ -259,47 +242,55 @@ class MonthPagerAdapter extends PagerAdapter {
 
         rangeIndex = new DateRangeIndex(min, max);
 
-        CalendarDay prevDate = selectedDate;
         notifyDataSetChanged();
-        setSelectedDate(prevDate);
-        if (prevDate != null) {
-            if (!prevDate.equals(selectedDate)) {
-                callbacks.onDateChanged(selectedDate);
+        invalidateSelectedDates();
+    }
+
+    public void clearSelections() {
+        selectedDates.clear();
+        invalidateSelectedDates();
+    }
+
+    public void setDateSelected(CalendarDay day, boolean selected) {
+        if(selected) {
+            if(!selectedDates.contains(day)) {
+                selectedDates.add(day);
+                invalidateSelectedDates();
+            }
+        }
+        else {
+            if(selectedDates.contains(day)) {
+                selectedDates.remove(day);
+                invalidateSelectedDates();
             }
         }
     }
 
-    public void setSelectedDate(@Nullable CalendarDay date) {
-        CalendarDay prevDate = selectedDate;
-        this.selectedDate = getValidSelectedDate(date);
+    private void invalidateSelectedDates() {
+        validateSelectedDates();
         for (MonthView monthView : currentViews) {
-            monthView.setSelectedDate(selectedDate);
-        }
-
-        if (date == null && prevDate != null) {
-            callbacks.onDateChanged(null);
+            monthView.setSelectedDates(selectedDates);
         }
     }
 
-    private CalendarDay getValidSelectedDate(CalendarDay date) {
-        if (date == null) {
-            return null;
+    private void validateSelectedDates() {
+        for (int i = 0; i < selectedDates.size(); i++) {
+            CalendarDay date = selectedDates.get(i);
+
+            if ((minDate != null && minDate.isAfter(date)) || (maxDate != null && maxDate.isBefore(date))) {
+                selectedDates.remove(i);
+                mcv.onDateUnselected(date);
+                i -= 1;
+            }
         }
-        if (minDate != null && minDate.isAfter(date)) {
-            return minDate;
-        }
-        if (maxDate != null && maxDate.isBefore(date)) {
-            return maxDate;
-        }
-        return date;
     }
 
     public CalendarDay getItem(int position) {
         return rangeIndex.getItem(position);
     }
 
-    public CalendarDay getSelectedDate() {
-        return selectedDate;
+    public @NonNull List<CalendarDay> getSelectedDates() {
+        return Collections.unmodifiableList(selectedDates);
     }
 
     protected int getDateTextAppearance() {
